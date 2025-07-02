@@ -1,14 +1,350 @@
-\documentclass{article}
-\usepackage{graphicx} % Required for inserting images
 
-\title{Kolmo}
+\documentclass[12pt]{article}
+\usepackage[margin=1.5cm]{geometry} % Adjusts margins
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+\usepackage{amsthm, bm}
+\usepackage{mathtools}
+
+
+
+\title{Kolmo: The Building Blocks}
 \author{Kieran Tran}
-\date{June 2025}
 
 \begin{document}
 
 \maketitle
 
-\section{Introduction}
+\begin{abstract}
+\textit{“It is not knowledge, but the act of learning, not possession but the act of getting there, which grants the greatest enjoyment.”}  
+\\\hfill -- Carl Friedrich Gauss
 
+\vspace{1em}
+This document serves as a mathematical companion to the Kolmo project — an exploration into real-time modelling of dynamical systems using tools from statistical learning, sensor fusion, and physics-informed machine learning. It aims to formalise the theoretical underpinnings of the system, focusing on probabilistic estimators, Kalman filters, and neural approximators for stochastic differential systems. My hope for this document is to outline thoroughly the mathematical theories and to ensure an expansive understanding into key techniques. These notes will go through my entire thought process, interesting things I have learned and will serve as the motivation for new mathematics I hope to develop in this field. 
+\end{abstract}
+
+\section{Estimators}
+There are a variety of estimators used in statistical inference. To gain a thorough understanding, we begin with Maximum Likelihood Estimators: \\
+\subsection{Maximum Likelihood Estimators (MLE)}
+The idea: analyse the likelihood function and find the value of the parameter $\theta$ that maximizes $L(\theta| \mathbf{x})$. Something that I have noticed is the importance of the induced likelihood function: $L^*(\eta | \mathbf{x})$
+\[L^*(\eta | \mathbf{x}) = \sup_{\{\theta\ : \tau(\theta) = \eta\}} L(\theta | \mathbf{x})\]
+This tells us the maximum likelihood we can achieve for any $\theta$ that maps to the given value of $\eta$. Recall that the supremum defines the lowest upper bound and so allows us to have a bound even if there is no maximum for $\tau$. There are applications to this including reducing dimensionality for variables of interest. (Could be a point of further research). Lets first analyse a situation, where we have:\\
+\begin{example}[Normal likelihood]
+Let \( X_1, \dots, X_n \) be i.i.d. \( \mathcal{N}(\theta, 1) \), and let \( L(\theta \mid \mathbf{x}) \) denote the likelihood function. Then
+\[
+L(\theta \mid \mathbf{x}) = \prod_{i=1}^n \frac{1}{(2\pi)^{1/2}} \exp\left(-\frac{1}{2}(x_i - \theta)^2\right)
+= \frac{1}{(2\pi)^{n/2}} \exp\left(-\frac{1}{2} \sum_{i=1}^n (x_i - \theta)^2\right).
+\]
+\end{example}
+Clearly, we can simply take the derivative here w.r.t $\theta$ such to then find the $\theta$ that corresponds the maximum likelihood (quite standard). Also note that we should look at the boundaries to ensure we observe a global maximum. It is extremely important to understand the properties of the turning point, lets us illustrate this:
+\[\frac{d}{d\theta}L(\theta| \mathbf{x}) = \frac{1}{(2\pi)^{n/2}}\sum_{i=1}^n (x_i - \theta)\cdot \exp\left(-\frac{1}{2} \sum_{i=1}^n (x_i - \theta)^2\right) = 0\]
+Here, we can see that the MLE is $\theta = \bar{x}$. We can see here that this is the only value of $\theta$ that satisfies and so we can use this property to then show that it is the only turning point and the maximum, and so we do not need to check the bounds. An alternative method is to consider an algebraic approach, observe that:
+\[\sum_{i= 1}^{n}(x_i - a)^2 = \sum_{i= 1}^{n}((x_i - \bar{x}) - (x_i+a))^2 = \sum_{i= 1}^{n}(x_i -\bar{x})^2 -2(x_i - \bar{x})(\bar{x}-a) + (\bar{x}-a)^2\]
+\[= \sum_{i= 1}^{n}(x_i -\bar{x})^2 -2(\bar{x}-a)\sum_{i= 1}^{n}(x_i - \bar{x}) + \sum_{i= 1}^{n}(\bar{x}-a)^2 = \sum_{i= 1}^{n}(x_i -\bar{x})^2 + \sum_{i= 1}^{n}(\bar{x}-a)^2 \geq \sum_{i= 1}^{n}(x_i -\bar{x})^2\] 
+Thus, we can write, $\forall a \in \mathbb{R}$:
+\[\sum_{i= 1}^{n}(x_i - a)^2 \geq \sum_{i= 1}^{n}(x_i -\bar{x})^2\]
+Using this and referring to the previous example:
+\[e^{-(1/2)\sum(x_i - \theta)^2}\leq e^{-(1/2)\sum(x_i - \bar{x})^2}\]
+Hence, we can see that $\bar{X}$ is the MLE. Often, log likelihoods is easier to work with especially when differentiation is involved as the log function is strictly increasing on $(0, 
+\infty)$ implying that the extrema of $L(\theta| \mathbf{x})$ and $\log L(\theta | \mathbf{x})$ coincide. An interesting application of MLE's is through the problem of unknown number of trials:\\
+\\
+Let $X_1, \dots, X_n$ be a random sample from a Bin($k,p$) population, where $p$ is known and $k$ is unknown. The following is the likelihood function:
+\[
+L(k \mid \mathbf{x}, p) = \prod_{i=1}^{n} \binom{k}{x_i} p^{x_i} (1 - p)^{k - x_i}
+\]
+Notice here that maximizing via differentiation is tedious due to factorials. Additionally, $k$ must be an integer. Note: $L(k|\mathbf{x}, p) = 0$ if $k < \max_i x_i$. Hence the MLE is an integer $k \geq \max_i x_i$ which satisfies:
+(A very common trick with quant interview problems)
+\[\frac{L(k|\mathbf{x}, p)}{L(k-1|\mathbf{x}, p)} \geq 1\] 
+\[\frac{L(k+1|\mathbf{x}, p)}{L(k|\mathbf{x}, p)} \leq 1\]
+Notice:
+\[\frac{L(k|\mathbf{x}, p)}{L(k-1|\mathbf{x}, p)} = \frac{\prod_{i=1}^{n} \binom{k}{x_i} p^{x_i} (1 - p)^{k - x_i}}{\prod_{i=1}^{n} \binom{k-1}{x_i} p^{x_i} (1 - p)^{k -1- x_i}} = \frac{\prod_{i=1}^{n} \frac{k!}{x_i!(k-x_i)!} (1 - p)^{k - x_i}}{\prod_{i=1}^{n} \frac{k-1!}{x_i!(k-x_i-1)!} (1 - p)^{k - x_i-1}}\]
+\[= \frac{(k(1-p))^n}{\prod_{i=1}^{n}k-x_i}\]
+Hence, we can see that the condition for  maximum is:
+\[
+(k(1 - p))^n \geq \prod_{i = 1}^{n} (k - x_i)
+\quad \text{and} \quad
+((k + 1)(1 - p))^n < \prod_{i = 1}^{n} (k + 1 - x_i).
+\]
+Dividing by \(k^n\) and letting \(z = 1/k\), we want to solve:
+\[
+(1 - p)^n = \prod_{i = 1}^{n} (1 - x_i z)
+\]
+for $z \in [0,1/\max_ix_i]$. We can see that the RHS is a strictly decreasing function for $z$. Hence, there exists a unique $\hat{z}$ which solves the equation. Thus, it is extremely important to understand how we can approach finding the MLE for different scenarios. Let us now look into the invariance property of maximum likelihood estimators (used to find an estimator for some function of $\theta$, $\tau(\theta)$). Let us construct the induced likelihood function. First consider the case that $\tau$ is one to one. Suppose we let $\eta = \tau (\theta)$, then the inverse function $\tau^{-1}(\eta) = \theta$ is well defined and the likelihood function of $\tau(\theta)$ is given by:
+\[L^*(\eta | \mathbf{x}) = \prod_{i=1}^nf(x_i|\tau^{-1}(\eta)) = L(\tau^{-1}(\eta)|\mathbf{x}) = L(\theta | \mathbf{x})\]
+and
+\[
+\sup_{\eta} L^*(\eta \mid \mathbf{x}) = \sup_{\eta} L(\tau^{-1}(\eta) \mid \mathbf{x}) = \sup_{\theta} L(\theta \mid \mathbf{x}).
+\]
+However, let us now define a more general definition for the likelihood function of $\tau(\theta)$. As such we define as before:
+\[
+L^*(\eta | \mathbf{x}) = \sup_{\{\theta\ : \tau(\theta) = \eta\}} L(\theta | \mathbf{x})\]
+The supremum here is implemented as it ensures correspondence between the maximization over $\eta$ and that over $\theta$.
+
+\subsection*{Theorem 1.1.1 (Invariance property of MLEs)}
+If $\hat{\theta}$ is the MLE of $\theta$, then for any function $\tau(\cdot)$, the MLE of $\tau(\hat{\theta})$ is $\hat{\tau} = \tau(\hat{\theta})$.
+
+\begin{proof} Let $\hat{\eta}$ be the value that maximises $L^*(\eta|\mathbf{x})$. We must show that $L^*(\hat{\eta}|\mathbf{x}) = L^*[\tau(\hat{\theta})|\mathbf{x}]$. Now, we know that the maxima of $L$ and $L^*$ coincide and so we have the following:
+
+\[L^*(\hat{\eta}|\mathbf{x}) = \sup_{\eta}\sup_{\theta:\tau(\theta) = \eta} L(\theta|\mathbf{x}) = \sup_\theta L(\theta|\mathbf{x}) = L(\hat{\theta}|\mathbf{x})\]
+Furthermore,
+\[L(\hat{\theta}|\mathbf{x}) = \sup_{\theta:\tau(\theta) = \tau(\hat{\theta}} L(\theta|\mathbf{x}) = L^*[\tau(\hat{\theta}|\mathbf{x}]\]
+
+\end{proof}
+So other important things to note when validating that a point is the global maximum in multivariate calculus is to check the Jacobian of the second order partial derivatives are positive as well. Additionally, there is also the EM (expectation maximization) algorithm which is an algorithm that is guaranteed to converge to the MLE. It is based on the idea of replacing one difficult likelihood maximization with a sequence of easier maximizations whose limit is the answer. It is great for missing data problems. 
+\subsection{Bayesian Estimator}
+Bayesian approach to statistics: $\theta$ is considered to be a quantity whose variation can be described by a probability distribution (prior distribution). This is a subjective distribution and is formulated before the data is seen. A sample is then taken from a population indexed by $\theta$ and the prior distribution is updated with this sample distribution (posterior distribution). This updating is done via Baye's Rule:
+\[\pi(\theta|\mathbf{x}) = f(\mathbf{x}|\theta)\pi(\theta)/m(\mathbf{x})\]
+Where $m$ is the marginal distribution of $X$:
+\[m(\mathbf{x}) = \int f(\mathbf{x}|\theta) \pi (\theta) d\theta\]
+\subsection{Loss Function Optimality}
+The loss function is a point estimation problem which reflects the fact that if an action $a$ is close to $\theta$, then the decision $a$ is reasonable and little loss is incurred. The loss function itself is a non-negative function that generally increases as the defined metric distance between $a$ and $\theta$. In a loss function, the quality of an estimator is quantified in its risk function, that is, for an estimator $\delta(\mathbf{x}) $ of $\theta$, the risk function, a function of $\theta$ is:
+\[R(\theta, \delta) = \mathbb{E}_\theta L(\theta, \delta(\mathbf{X}))\]
+Here $L$ is the loss function. Lets also define the regression function $g$, in principle, we can find the best possible $g^* = \text{argmin}_g\mathbb{E}L(\theta, g(\mathbf{X}))$. From this, we can also define supervised learning: which is when one tries to learn the functional relationship between feature vector $\mathbf{x}$ and response $y$ in the presence of a "teacher" who provides $n$ examples.Most questions of interest in supervised learning can be answered if we know the conditional pdf $f(y|\mathbf{x})$ because we can in principle workout the function value of $g^*(\mathbf{x})$. Contrarily, unsupervised learning makes no distinction between response and explanatory variables, and the objective is simply to learn the structure of the unknown distribution of the data. In other words, we need to learn $f(\mathbf{x})$, and guess $g(\mathbf{x})$ is an approximation of $f(\mathbf{x})$ and the risk is of the form:
+\[r(g) = \mathbb{E}L(f(\mathbf{X}), g(\mathbf{X}))\]
+\section{Training and Test Loss}
+Given an arbitrary prediction unction $g$, it is typically not possible to compute its risk $r(g)$. However, using the training sample $t$, we can approximate the risk function via empirical risk:
+\[r_t(g) = \frac{1}{n}\sum_{i=1}^{n}L(Y_i,g(\mathbf{X_i}))\]
+Which we call the training loss. It is an unbiased estimator of the risk for a prediction function $g$ based on training data. We can then approximate the optimal prediction function $g^*$ (which is the minimizer), we first select a suitable collection of approximating functions $G$ and then take our learner to be the function in $G$ that minimizes the training loss. Note however, that minimizing training loss over all possible functions $g$ (rather than within a set of suitable functions $G$) can lead to such functions with a poor ability to predict new (independent from $t$) pairs of data. This is known as overfitting. 
+\[g_t^G = \text{argmin}_{g\in G} r_t(g)\]
+The prediction accuracy of new pairs of data is measured via the generalization risk of the learner. For a fixed training set $t$, it is defined as:
+\[L(g_\tau^G) = \mathbb{E}L(Y, g_\tau^G(\mathbf{X}))\]
+where $(\mathbf{X}, Y)$ is distributed according to $f(\mathbf{x}, y)$. However, for a random training set $t$, the generalization risk is also a random variable that depended on $t$ and $G$.:
+\[\mathbb{E}r(g_t^G) = \mathbb{E}L(Y, g_t^G(\mathbf{X}))\]
+Where $(\mathbf{X}, Y)$ is independent of $t$. Let us now look into Ordinary Least Squares:
+\[x_i = [1, u_i, u_i^2, \dots, u_i^{p-1}]^\top, i=1,\dots,n\]
+\[\boldsymbol{\beta} = [\beta_1, \beta_2, \beta_3, \dots, \beta_n]^\top\]
+\[X = 
+\begin{bmatrix}
+    1 & u_1 & u_1^2 & \dots & u_1^{p-1} \\
+    1 & u_2 & u_2^2 & \dots & u_2^{p-1} \\
+    \vdots & \vdots & \vdots & \dots & \vdots \\
+    1 & u_n & u_n^2 & \dots & u_n^{p-1} \\
+\end{bmatrix}\]
+Collecting the responses {$y_i$}, into a column vector $\mathbf{y}$, the training loss can be expressed as:
+\[\frac{1}{n}||\mathbf{y} - X\boldsymbol{\beta}||^2\]
+We write the ordinary least squares solution:
+\[\hat{\boldsymbol{\beta}} = \text{argmin}_\beta ||\mathbf{y} - X\boldsymbol{\beta}||^2\]
+Geometrically, we find $\hat{\boldsymbol{\beta}}$ by choosing $X\hat{\boldsymbol{\beta}}$ to be equal to the orthogonal projection of $\mathbf{y}$ onto the linear space spanned by the columns of matrix $X$. That is $X\hat{\boldsymbol{\beta}} = \mathbf{Py}$ where $P$ is the projection matrix. To investigate more into what the projection matrix is, we look into the Moore-Penrose Pseudo-Inverse.\\
+\textbf{Moore-Penrose Pseudo-Inverse}}\\
+The Moore–Penrose pseudo-inverse of a real matrix $A \in \mathbb{R}^{n \times p}$ is defined as the unique matrix $A^+ \in \mathbb{R}^{p \times n}$ that satisfies the conditions:
+\begin{enumerate}
+    \item $AA^+A = A$
+    \item $A^+AA^+ = A^+$
+    \item $(AA^+)^T = AA^+$
+    \item $(A^+A)^T = A^+A$
+\end{enumerate}
+We can write $\mathbf{A}^+$ in terms of $\mathbf{A}$ when $\mathbf{A}$ has a full column or row rank:
+\[\mathbf{A}^\top \mathbf{A}\mathbf{A}^+=\mathbf{A}^\top(\mathbf{A}\mathbf{A}^+)^\top = (\mathbf{A}\mathbf{A}^+\mathbf{A})^\top = \mathbf{A}^\top\]
+If $A$ has a full column rank $p$, then $(AA^T)^{-1}$ exists, so it follows that $A^+ = (A^TA)^{-1}A^T$. This is referred to as the \textit{left pseudo-inverse}, as $A^+A = I_p$. Similarly, if $A$ has a full row rank $n$, that is, $(AA^+)^{-1}$ exists, then it follows from:
+\[\mathbf{A}^+ \mathbf{A}\mathbf{A}^\top=(\mathbf{A}^+ \mathbf{A})^\top\mathbf{A}^\top = \mathbf{A}^\top \]
+Hence, $A^+ = A^T(A^TA)^{-1}$. This is referred to as the \textit{right pseudo-inverse}, as $AA^+ = I_n$. 
+Finally, if $A$ is a full rank square, the psuedo inverse is the inverse. An interesting result is that the projection matrix is:
+\[P = XX^+\]
+Let us prove this. We note that the projection matrix $P$ performs the orthogonal projection onto the column space of $X$. Let $V = \text{Span}\{x_1, \dots, x_p\}$. We can see that if we have so linear combination of the column space $Xa$ $PXa = XX^+Xa = Xa$, so that $P$ projects any vector in $V$ onto itself. Now to show that the projection matrix projects any vector in $V^\top$, we note that orthogonal vectors $z$ satisfy $X^\top z = 0$:
+\[XX^+ z = (XX^+)^\top z = (X^+)^\top X^\top z = 0\]
+Hence, we have verified the projection matrix, it can also be noted that $P$ is symmetric and idempotent. From $X\boldsymbol{\hat{\beta}} = Py$ and $PX = X$, we see that:
+\[X^\top X \hat{\beta} = X^\top Py = (PX)^\top y = X^\top y\]
+Which gives a set of linear equations and so we can solve:
+\begin{equation}
+\hat{\beta} = X^+y
+\label{}
+\end{equation}
+To calculate the test loss, we also perform MLE when comparing the predicted value of the model to the true values. Lower bounds for test losses corresponds to an estimate of the minimal squared error risk. Something that I would also like to note here is the presence of floating point errors when performing a direct inversion of a matrix, especially in trying to derive the psuedoinverse as shown in (1). So, it is often better to perform other decompositions such as LU, Cholesky and QR. Let us dissect this by first looking at LU decompositions, which is used in the general case:
+\\
+Every invertible matrix $A$ can be written as the product of 3 matrices:
+\[A = PLU\]
+Where $P$ is the permutation matrix, $L$ is a lower triangular matrix and $U$ is an upper triangular matrix. A permutation matrix is a square matrix with a single 1 in each row and column and zeros otherwise. Hence, the matrix $PB$ simply permutes the rows of matrix $B$ etc. Not the matrix $P$ is orthogonal:
+\[P^\top A = LU\]
+Hence, the decomposition is not unique. On the otherhand, the Cholesky decomposition is best used for when $A = X^\top X$ is symmetric positive semi-definite ($<Ax,x> \geq 0 \forall x$).
+\[A = LL^\top\]
+Additionally, QR decomposition avoids the normal equations entirely as it solves least squares without forming $X^\top X$: Let $A$ be an $n
+\times p $ matrix where $p \leq n$, then $\exists Q \in \mathbb{R}^{n \times p}$ that is orthogonal: $Q^\top Q = I_p$ and upper triangular matrix $R \in \mathbb{R}^{p\times p}$ such that:
+\[A = QR\]
+We also note that SVD is performed for when $X$ is ill-conditioned or rank-deficient: Any complex $m \times n$ matrix $A$ admits a unique decomposition:
+\[A = U\Sigma V^*\]
+where $U$ and $V$ are unitary matrices of dimension $m$ and $n$ respectively (unitary is when its inverse is equal to its conjugate transpose) and $\Sigma$ is a real $m \times n$ diagonal matrix. Note that SVD is the most robust under floating point error or rank deficiency. We will explore more about the geometric implications of SVD and PCA abit later on. An interesting result is the Gauss-Markov theorem, which states that the least squares estimates of the parameters $\beta$ have the smallest variance among all linear unbiased estimates. Here, let us focus on the estimation of any linear combination of the paramters:
+\[\theta = a^\top \beta\]
+Here, our least squares estimates is:
+\[\hat{\theta} = a^\top \hat{\beta} = a^\top X^+ y\]
+Recall here the psuedo-inverse $X^+$ (note, the right psuedo-inverse is used here as it is often the case that there are more samples than there are parameters):
+\[a^\top X^+ y = a^\top (X^\top X)^{-1}X^\top y\]
+Notice that if we assume that the linear model is correct, $a^\top \hat{\beta}$ is unbiased:
+\begin{align*}
+\mathbb{E}(a^\top \hat{\beta}) 
+&= \mathbb{E}\left(a^\top (\mathbf{X}^\top \mathbf{X})^{-1} \mathbf{X}^\top \mathbf{y} \right) \\
+&= a^T (\mathbf{X}^\top \mathbf{X})^{-1} \mathbf{X}^\top \mathbf{X} \beta \\
+&= a^\top \beta.
+\end{align*}
+The Gauss-Markov Theorem states that if we have any other linear estimator $\tilde{\theta} = c^\top y$ that is unbiased for $a^\top \beta $,: $\mathbb{E}(c^\top y) = a^\top \beta$:
+\[\operatorname{Var}(a^\top \hat{\beta}) \leq \operatorname{Var}(\mathbf{c}^\top \mathbf{y})\]
+\begin{proof}
+First note that:
+\[\mathbb{E}(\tilde{\theta}) = \mathbb{E}(c^\top y)= c^\top X\beta = a^\top \beta \rightarrow a^\top = c^\top X\]
+Defining the least squares estimator:
+\[\hat{\beta} = X^\top y = (X^\top X)^{-1}X^\top y \rightarrow \hat{\theta} = a^\top(X^\top X)^{-1}X^\top y  \]
+Here, lets set $c_0$ as:
+\[c_0 = (a^\top (X^\top X)^{-1}X^\top)^\top = X((X^\top X)^{-1})^\top a\]
+Note that $X^\top X$ is symmetric and it is easy to show that $((X^\top X)^{-1})^\top = (X^\top X)^{-1}$
+\[c_0 = X(X^\top X)^{-1}a\]
+Let us now decompose the estimator, let $c =c_0 + h$:
+\[\tilde{\theta} = c^\top y = (c_0+h)^\top y = \hat{\theta} + h^\top y\]
+So we express:
+\[\operatorname{Var}(\tilde{\theta}) = \operatorname{Var}(\hat{\theta} + h^\top y) = \operatorname{Var}((c_0+h)^\top y)\]
+Assuming Gaussian noise in the error term and a homoskedastic linear model, $\mathbf{y} \sim N(\cdot, \sigma^2\mathbf{I})$:
+\[\operatorname{Var}((c_0+h)^\top y) = \mathbb{E}(((c_0+h)^\top y - \mathbb{E}((c_0+h)^\top y))((c_0+h)^\top y - \mathbb{E}((c_0+h)^\top y))^\top)\]
+\[(c_0+h)\operatorname{Var}(y)(c_0+h)^\top = \sigma^2 ||c_0+h||^2 = \sigma^2(||c_0||^2+2\langle c_0,h \rangle + ||h||^2)\]
+Notice since however that:
+\[a^\top = c^\top X = (c_0+h)^\top X = c_0^\top X + h^\top X = a^\top + h^\top X \]
+Hence, $h^\top X = 0$, which tells us that $h \in \text{col}(X)$, implying that:
+\[\langle c_0, h \rangle = 0\]
+\[\therefore \operatorname{Var}((c_0+h)^\top y) = \sigma^2(||c_0||^2+ ||h||^2)\]
+Note as well that:
+\[\operatorname{Var}(\hat{\theta}) = \operatorname{Var}(c_0^\top y) = \sigma^2 ||c_0||^2\]
+Hence, by the above results:
+\[\operatorname{Var}(\tilde{\theta}) = \operatorname{Var}((c_0+h)^\top y) = \sigma^2(||c_0||^2+ ||h||^2) \geq \sigma^2 ||c_0||^2 = \operatorname{Var}(\hat{\theta}) \]
+\[\therefore \operatorname{Var}(c^\top y) \geq \operatorname{Var}(a^\top \hat{\beta})\]
+\end{proof}
+Consider the mean squared error of an estimator $\tilde{\theta}$ in estimating $\theta$:
+\[\text{MSE}(\tilde\theta) = \mathbb{E}(\tilde\theta-\theta)^2 = \operatorname{Var}(\tilde\theta) + [\mathbb{E}(\tilde\theta)-\theta)]^2\]
+Note that $[\mathbb{E}(\tilde\theta)-\theta)]^2$ is the squared bias.
+\section{Tradeoffs in Statistical Learning}
+We can decompose the generalization risk into the following:
+\[r(g^G_\tau) = r^* + r(g^G)-r^* + r(g^G_\tau)-r(g^G)\]
+
+$r^* $ is the irreducible risk, $r(g^G)-r^*$ is the approximation error (finds the diff between the irreducible risk and the best possible risk that can be obtained by selecting the best prediction function in the class of functions $G$. $r(g^G_\tau)-r(g^G)$ is the statistical error, depends on the training set $\tau$ and how well the learner $g_\tau ^G$ estimates the best possible prediction function $g^G$. Let us now explore the idea of the optimal prediction function:
+\[g^*(x) = \mathbb{E}(Y|X = x)\]
+Under the squared error loss:
+\[g^*(x) = \arg \min_{g}\mathbb{E}((Y-g(X))^2)\]
+This minimises the squared error loss under all measurable functions. This is the Bayes optimal predictor under squared loss. It captures the true conditional mean, assuming you had infinite data and knew the data-generating distribution exactly.
+It is not learnable directly from finite data — it's a theoretical object. Lets illustrate the idea of tradeoffs between the approximation and statistical error via he polynomial regression:
+\\
+Let $G = G_p$ be the class of linear functions of $x = [1, u, u^2, \dots, u^{p-1}]^\top$ and $g^*(x) = x^\top \beta^*$. Conditional on $X = x$, we have $Y = g^*(x) + \varepsilon(x)$, with $\varepsilon(x) \sim N(0,r^*)$, where $l^* = \mathbb{E}(Y-g^*(X))^2$ is the irreducible error (refer to PolynomialRegression folder on main to see the demonstration). Lets first consider the approximation error. Any function $g \in G_p$ can be expressed:
+\[g(x) = h(u) = \beta_1 + \beta_2u + \dots + \beta_p u^{p-1} = [1, u, u^2, \dots, u^{p-1}]\boldsymbol{\beta}\]
+We now wish to derive $g^*(X)$. $g(X)$ is distributed as $[1,U, \dots, U^{p-1}]\boldsymbol{\beta}$, where $U \sim $ Uniform ($0,1$). Similarly, $g^*(X)$ is distributed as $[1,U, \dots, U^{3}]\boldsymbol{\beta}^*$. It follows that the approximation error is:
+\[\int_0^1 ([1, u, \dots, u^{p-1}]\boldsymbol{\beta} - [1,u,\dots, u^3]\boldsymbol{\beta ^*})^2 du\]
+Let:
+\[[1, u, \dots, u^{p-1}] = \phi(u)\]
+To minimise the approximation error, we must find the gradient function of:
+\[J(\beta) = \int_0^1 ( \phi(u)\boldsymbol{\beta} - g^*(u))^2 du\]
+\[\nabla_{\boldsymbol{\beta}} J(\boldsymbol{\beta}) = 2 \int_0^1 \left( \boldsymbol{\phi}(u)\boldsymbol{\beta} - g^*(u) \right) \boldsymbol{\phi}(u)^\top \, du\]
+And hence to minimise:
+\[\int_0^1 \left( \boldsymbol{\phi}(u)\boldsymbol{\beta} - g^*(u) \right)  u^k \, du = 0, \, k \in [0, p-1]\]
+We now establish the $p \times p$ Hilbert matrix:
+\[
+\mathbf{H}_p = \int_0^1 [1, u, \dots, u^{p-1}]^\top [1, u, \dots, u^{p-1}] \, du
+\]
+the \((i,j)\)-th entry given by
+\[
+\int_0^1 u^{i + j - 2} \, du = \frac{1}{i + j - 1}.
+\]
+Then, the above system of linear equations can be written as
+\[
+\mathbf{H}_p \bm{\beta} = \widehat{\mathbf{H}} \bm{\beta}^*,
+\]
+where \( \widehat{\mathbf{H}} \) is the \( p \times 4 \) upper-left sub-block of \( \mathbf{H}_{\widetilde{p}} \), and \( \widetilde{p} = \max\{p, 4\} \).
+The solution, which we denote by \( \bm{\beta}_p \), is:
+\[
+\bm{\beta}_p =
+\begin{cases}
+\left( \frac{65}{6} \right), & p = 1, \\
+\left( -\frac{20}{3}, 35 \right)^\top, & p = 2, \\
+\left( -\frac{5}{2}, 10, 25 \right)^\top, & p = 3, \\
+\left( 10, -140, 400, -250, 0, \dots, 0 \right)^\top, & p \geq 4.
+\end{cases}
+\]
+Hence, the approximation error $\mathbb{E}(g^{G_p}(X)-g^*(X))^2$ is given:
+\[
+\int_0^1 \left( [1, u, \dots, u^{p-1}] \bm{\beta}_p - [1, u, u^2, u^3] \bm{\beta}^* \right)^2 du =
+\begin{cases}
+\frac{32225}{252} \approx 127.9, & p = 1, \\
+\frac{1625}{63} \approx 25.8, & p = 2, \\
+\frac{625}{28} \approx 22.3, & p = 3, \\
+0, & p \geq 4.
+\end{cases}
+\]
+Lets now analyse the statistical error: Since $g_\tau (x) = x^\top \hat{\boldsymbol{\beta}}$
+\[
+\int_0^1 \left( [1, \dots, u^{p-1}] (\widehat{\bm{\beta}} - \bm{\beta}_p) \right)^2 du 
+= (\widehat{\bm{\beta}} - \bm{\beta}_p)^\top \mathbf{H}_p (\widehat{\bm{\beta}} - \bm{\beta}_p).
+\]
+Using again a squared-error loss, a second decomposition (for general \( \mathcal{G} \)) starts from:
+\[
+r(g^{\mathcal{G}}_{\mathcal{T}}) = r^* + r(g^{\mathcal{G}}_{\mathcal{T}}) - r(g^*),
+\]
+where the statistical error and approximation error are combined.
+\[
+r(g^{\mathcal{G}}_{\mathcal{T}}) = \mathbb{E}(g^{\mathcal{G}}_{\mathcal{T}}(X) - Y)^2 
+= r^* + \mathbb{E}\left(g^{\mathcal{G}}_{\mathcal{T}}(X) - g^*(X)\right)^2 
+= r^* + \mathbb{E}D^2(X, \mathcal{T}),
+\]
+where we define the deviation function:
+\[
+D(X, \mathcal{T}) = g^{\mathcal{G}}_{\mathcal{T}}(X) - g^*(X).
+\]
+Now consider \( D(x, \mathcal{T}) \) as a random variable for a fixed input \( x \) and random training set \( \mathcal{T} \). The expectation of its square is:
+\[
+\mathbb{E}\left( g^{\mathcal{G}}_{\mathcal{T}}(x) - g^*(x) \right)^2 
+= \mathbb{E} D^2(x, \mathcal{T}) 
+= \left( \mathbb{E}_{\mathcal{T}} D(x, \mathcal{T}) \right)^2 + \operatorname{Var}_{\mathcal{T}} D(x, \mathcal{T}),
+\]
+\[
+= \left( \mathbb{E}_{\mathcal{T}} g^{\mathcal{G}}_{\mathcal{T}}(x) - g^*(x) \right)^2 + \operatorname{Var}_{\mathcal{T}} g^{\mathcal{G}}_{\mathcal{T}}(x).
+\]
+
+Here, we denote the pointwise squared bias: $ \left( \mathbb{E}_{\mathcal{T}} g^{\mathcal{G}}_{\mathcal{T}}(x) - g^*(x) \right)^2$, and the pointwise variance $\operatorname{Var}_{\mathcal{T}} g^{\mathcal{G}}_{\mathcal{T}}(x)$
+The squared bias can be reduced by making the class of functions $
+\mathcal{G}$, more complex, however, decreasing the bias by increasing complexity leads to an increase in the variance term, and thus we seek learns that provide an optimal balance via minimal generalisation risk. (Bias- variance tradeoff). Note, the expected generalisation risk can be writen as:
+\[
+\mathbb{E}\, r(g^{\mathcal{G}}_{\mathcal{T}}) 
+= r^* + \mathbb{E}\left( \mathbb{E}[g^{\mathcal{G}}_{\mathcal{T}}(X) \mid X] - g^*(X) \right)^2 
++ \mathbb{E}\left[ \operatorname{Var}(g^{\mathcal{G}}_{\mathcal{T}}(X) \mid X) \right].
+\]
+\section{Estimating Risk}
+Let us explore something called in-sample risk of a learner $g_{\mathcal{\tau}}$:
+\[r_{in}(g_\tau)=\frac{1}{n}\sum_{i=1}^n\mathbb{E}L(Y'_i,g_{\tau}(x_i))\]
+where each response $Y'_i$ is drawn from $f(y|x_i)$ independently. For a fixed training set $\tau$, we can compare the training loss of the learner with the in-sample risk. This is known as optimism of the training loss:
+\[\text{op}_\tau = r_{in}(g_\tau) - r_\tau(g_\tau)\]
+It measures how much the training loss underestimates (is optimistic about) the unknown in-sample risk. 
+\[\mathbb{E}[\text{op}_\mathcal{T}|X_1 = x_1,\dots, X_n= x_n] =  \mathbb{E}_X \, \mathrm{op}_{\mathcal{T}} 
+= \frac{2}{n} \sum_{i=1}^n \operatorname{Cov}_X(g_{\mathcal{T}}(x_i), Y_i)\]
+Let $Y_i$ be the response for $x_i$ and let $\hat{Y}_i = g_\mathcal{T}(x_i)$ be the predicted value. Note here that $\hat{Y}_i$ is dependent on $Y_i$. $Y'_i$ is the test responses and is an independent copy of $Y_i$ for the same $x_i$, it also has the same distribution as $Y_i$ and statistically independent of all {$Y_i$} and therefore independent of $\hat{Y}_i$.
+
+\begin{align*}
+\mathbb{E}_X \, \text{op}_{\mathcal{T}} 
+&= \frac{1}{n} \sum_{i=1}^{n} \mathbb{E}_X \left[ (Y_i' - \widehat{Y}_i)^2 - (Y_i - \widehat{Y}_i)^2 \right] \\
+&= \frac{2}{n} \sum_{i=1}^{n} \mathbb{E}_X \left[ (Y_i - Y_i') \widehat{Y}_i \right] \\
+&= \frac{2}{n} \sum_{i=1}^{n} \left( \mathbb{E}_X [Y_i \widehat{Y}_i] - \mathbb{E}_X [Y_i] \cdot \mathbb{E}_X [\widehat{Y}_i] \right) \\
+&= \frac{2}{n} \sum_{i=1}^{n} \operatorname{Cov}_X (\widehat{Y}_i, Y_i).
+\end{align*}
+\subsection{Cross Validation}
+Idea: Make multiple identical copies of the data set, and partition each copy into different training and test sets. For each of these sets, we estimate the model parameters using only training data and then predict the responses for the test set. The average loss between the predicted and observed responses is then a measure for the predictive power of the model. \\
+\\
+In particular, suppose we partition a data set $\mathcal{T}$ of size $n$ into $K$ fold $C_1, \dots, C_K$ of sizes $n_1, \dots,n_k$ such that $n_1 + \dots + n_k = n$. Let $r_{C_k}$ be the test loss when using $C_k$ as the test data and all remaining data, denoted $\mathcal{T}_{-k}$ as training data. Each $r_{C_k}$ is an unbiased estimator of generalisation risk for training set $\mathcal{T}_{-k}$ that is for $r(g_{\mathcal{T}_{-k}}).$ The $K$- fold cross validation loss is defined:
+\begin{align*}
+\text{CV}_K &= \sum_{k=1}^K \frac{n_k}{n} \, r_{\mathcal{C}_k}(g_{\mathcal{T}_{-k}}) \\
+&= \frac{1}{n} \sum_{k=1}^K \sum_{i \in \mathcal{C}_k} L(g_{\mathcal{T}_{-k}}(x_i), y_i) \\
+&= \frac{1}{n} \sum_{i=1}^n L(g_{\mathcal{T}_{-\kappa(i)}}(x_i), y_i),
+\end{align*}
+Note that as an average is taken over the varying training es {$\mathcal{T_{-k}}$}, it estimates the expected generalisation risk $\mathbb{E}r(g_\mathcal{T})$, rather than the generalisation risk $r(g_\tau)$ for the particular training set $\tau$
+\section{Modeling Data}
+If the order in which the data were collected or their labeling is not informative or relevant, then the joint pdf of $X_1, \dots, X_n$ satisfies the symmetry:
+\[f_{X_1,\dots, X_n}(x_1,\dots,x_n) = f_{X_{\pi_1},\dots,X_{\pi_n}}(X_{\pi_1},\dots,X_{\pi_n})\]
+For any permutation $\pi_1,\dots,\pi_n$ of the integers from 1 to $n$. We call that the infinite sequence $X_1,  X_2, \dots$ is exchangeable if this permutational invariance holds for any finite subset of the sequence. In a typical unsupervised setting, we have a training set $\tau = \{x_1, \dots, x_n\}$ that is viewed as the outcome of n iid. random variables $X_1, \dots, X_n$ from some unknown pdf $f$. The objective is to learn $f$ from the finite training data. In a supervised learning sense, we begin by specifying a class of pdfs $\mathcal{G}_p = \{g(\cdot | \theta), \theta \in \Theta \}$. Note $
+\Theta \subset \mathbb{R}^p$. Hence, in this case, we seek the best $g$ in $\mathcal{G}_p$ such to minimize some risk. Note $\mathcal{G}_p$ may not necessarily contain the true $f$ for very large $p$. For each $x$ we measure the discrepancy between the true model $f(x)$ and the hypothesized model $g(x | \theta)$ using the loss function:
+\[L(f(x),g(x|\theta)) = \log\frac{f(x)}{g(x|\theta)}\]
+The expected value of this loss (the risk) is thus:
+\[r(g) = \mathbb{E}\log\frac{f(x)}{g(x|\theta)} = \int f(x) \log\frac{f(x)}{g(x|\theta)} \, dx\]
+This is known as the Kullback-Leibler (KL) divergence (can also be called cross-entropy distance) between $f$ and $g(\cdot | \theta)$. It is claimed that this is always greater than or equal to 0. The proof of this is via Jensen's inequality. (A pretty cool proof) We now also define $g^{\mathcal{G}_{p}}$ as the global minimizer of risk in the class $\mathcal{G}_p$, that is $g^{\mathcal{G_p}} = \arg \min_{g \in \mathcal{G}_p} r(g)$. If we define:
+\[
+\theta^* = \arg\min_\theta \mathbb{E}L(f(X), g(X|\theta))=\arg\min_\theta \int \left( \log f(x) - \log g(x \mid \theta) \right) f(x) \, dx
+\]
+Now notice that:
+\[\int \left( \log f(x) \right) f(x) \, dx\]
+Does not depend on $\theta$ and so this term can be omitted and we get:
+\[\arg\min_\theta \int \left( \log f(x) - \log g(x \mid \theta) \right) f(x) \, dx = \arg\max_{\theta} \int f(x) \log g(x \mid \theta) \, dx 
+= \arg\max_{\theta} \mathbb{E} \log g(X \mid \theta),\]
+Hence, $g^{\mathcal{G}_p} = g(\cdot | \theta^*)$ and learning $g^{\mathcal{G}_p}$ is equivalent to learning $\theta^*$. Thus, to learn $\theta^*$ from training set $\tau = \{x_1, \dots, x_n\}$, we must minimise the training loss:
+\[\]
 \end{document}
