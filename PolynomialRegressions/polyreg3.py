@@ -17,3 +17,5 @@ plt.plot(p_range, MSE, 'b', p_range, MSE, 'bo')
 plt.xticks(ticks = p_range)
 plt.xlabel('Number of parameters $p$')
 plt.ylabel('Test Loss')
+
+plt.show()
