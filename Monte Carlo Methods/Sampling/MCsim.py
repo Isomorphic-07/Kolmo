@@ -20,6 +20,7 @@ x = np.array(np.ones(n, dtype=int))
 # Initial distribution: 50% in state 1, 50% in state 2
 f0 = np.array([0, 0.5, 0.5, 0])
 x[0] = np.min(np.where(np.cumsum(f0) > np.random.rand()))
+# this selects where we will begin
 
 for t in range(0, n-1):
     x[t + 1] = np.min(np.where(np.cumsum(P[x[t],:]) > np.random.rand()))

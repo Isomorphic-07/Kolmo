@@ -77,4 +77,5 @@ print(default)
 from collections import Counter
 counter = Counter(string)
 
-print(counter)
+print(counter) #gives a dictionary where the keys are characters in string and values
+#are the number of times the character shows up in string

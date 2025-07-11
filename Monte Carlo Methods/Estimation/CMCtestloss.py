@@ -2,6 +2,8 @@ import numpy as np, matplotlib.pyplot as plt
 from numpy.random import rand, randn
 from numpy.linalg import solve
 
+#simulate training set of size n, fit models up to size k = 8, estimate test loss
+# using a test set with the same sample size n
 def generate_data(beta, sig, n):
     u = rand(n,1)
     y = (u ** np.arange(0,4) @ beta + sig * randn(n, 1))
