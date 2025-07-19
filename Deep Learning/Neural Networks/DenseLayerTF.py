@@ -18,3 +18,17 @@ class MyDenseLayer (tf.keras.layers.Layer): #note, our custom dense layer is a s
         
         return output #gives us the activation value \in [0, 1]
         
+#TF has already implemented this:
+layer = tf.kera.layers.Dense(units = 2)
+
+#multi output percepptron
+"""
+model = tf.kera.Sequential([
+    tf.keras.layers.Dense(n_1), #hidden layer
+    tf.keras.layers.Dense(n_2)
+    .
+    .
+    .
+    tf.keras.layers.Dense(2) #output layer
+])
+"""

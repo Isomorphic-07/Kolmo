@@ -110,10 +110,26 @@ for i in range(n):
 print(B)
 #so notice with max heaps, you must negate its sign
 
-#building Heap from scratch (overtime)
+#building Heap from scratch (overtime), time of O(n log n), note that this is slower
+# than heapify as it is O(n).
 C =  [-4, 3,1, 0, 2, 5, 10,8, 12, 9]
 heap = []
 
 for x in C:
-    heapq.heappush(heap, x)
+    heapq.heappush(heap, x) #O(log n)
     print(heap)
+    
+    
+    
+#putting tuples of items on the heap
+D = [5,4,3,5,4,3,5,5,4]
+
+from collections import Counter
+
+counter = Counter(D) #hash map of elements and number of each
+
+heap = []
+for k,v in counter.items():
+    heapq.heappush(heap, (v, k))
+    
+print(heap) #looks at the first value, very useful for problems involving counting minimum number of occurences

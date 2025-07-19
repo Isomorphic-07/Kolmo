@@ -15,7 +15,7 @@ def bub_sort(arr):
     while flag:
         flag = False #assume we are done, but once there is a swap, we change it back
         for i in range(1, n):
-            if arr[i] < arr[i-1]:
+            if arr[i] < arr[i-1]: #flipping this makes it descending
                 flag = True
                 """
                 copy = arr[i]
