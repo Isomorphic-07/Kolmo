@@ -306,3 +306,47 @@ sampled_indices = sampled_indices.squeeze(-1).cpu().numpy()
 print("Input: \n", repr("".join(idx2char[x[0].cpu()])))
 print()
 print("Next Char Predictions: \n", repr("".join(idx2char[sampled_indices])))
+
+
+#Now, lets train the model and establish the loss function
+
+"""
+To train the model on the classification task, we can use a form of the crossentropy
+loss (negative log likelihood loss). Specifically, we will use PyTorch's CrossEntropyLoss
+as it combines the application of a log-softmax and negative log likelihood in a single
+class and accepts integer targets for categorical classification tasks. We will want
+to compute the loss using the true targets -- the labels -- and the predicted targets -- the
+logits.
+"""
+#Define loss function:
+
+cross_entropy = nn.CrossEntropyLoss() #instantiates the function
+
+def compute_loss(labels, logits):
+    """
+    Inputs:
+        labels: (batch_size, seq_length)
+        logits: (batch_size, seq_length, vocab_size)
+        
+    Outputs:
+        loss: scalar cross entropy loss over the batch and sequence length
+    """
+    batched_labels = labels.view(-1) #this compresses the shape of labels to (B* L,)
+    #this allows us to treat each timestep across all batches as one prediction example
+    
+    #we want to batch th logits so that the shape of the logits is (B * L, V)
+    batched_logits = logits.view(-1, vocab_size)
+    
+    #compute cross-entropy loss using batched next characters and predictions
+    loss = cross_entropy(batched_logits, batched_labels)
+    return loss
+
+#let us compute the loss of the predictions of the untrained model
+
+#y.shape #(batch_size, sequence_length)
+#pred.shape #(batch_size, seq_length, vocab_size)
+
+example_batch_loss = compute_loss(y, pred)
+
+print(f"Prediction shape: {pred.shape} # (batch_size, sequence_length, vocab_size)")
+print(f"scalar_loss:      {example_batch_loss.mean().item()}")
