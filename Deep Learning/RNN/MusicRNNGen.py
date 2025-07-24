@@ -338,8 +338,8 @@ def compute_loss(labels, logits):
     batched_logits = logits.view(-1, vocab_size)
     
     #compute cross-entropy loss using batched next characters and predictions
-    loss = cross_entropy(batched_logits, batched_labels)
-    return loss
+    loss = cross_entropy(batched_logits, batched_labels) 
+    return loss #shape: (B*L,)
 
 #let us compute the loss of the predictions of the untrained model
 
@@ -350,3 +350,119 @@ example_batch_loss = compute_loss(y, pred)
 
 print(f"Prediction shape: {pred.shape} # (batch_size, sequence_length, vocab_size)")
 print(f"scalar_loss:      {example_batch_loss.mean().item()}")
+
+### Hyperparameter setting and optimization ###
+
+vocab_size = len(vocab)
+
+# Model parameters:
+params = dict(
+  num_training_iterations = 3000,  # Increase this to train longer
+  batch_size = 8,  # Experiment between 1 and 64
+  seq_length = 100,  # Experiment between 50 and 500
+  learning_rate = 5e-3,  # Experiment between 1e-5 and 1e-1
+  embedding_dim = 256,
+  hidden_size = 1024,  # Experiment between 1 and 2048
+)
+
+# Checkpoint location:
+checkpoint_dir = './training_checkpoints'
+checkpoint_prefix = os.path.join(checkpoint_dir, "my_ckpt")
+os.makedirs(checkpoint_dir, exist_ok=True)
+
+#now we can set up for experiment tracking via Comet. 
+
+#create Comet experiment to track training run
+
+def create_experiment():
+    
+    #end prior experiments
+    if 'experiment' in locals():
+        experiment.end()
+        
+    #initiate comet experiment for tracking
+    experiment = comet_ml.Experiment(api_key = COMET_API_KEY,
+                                     project_name = "MusicRNNGen")
+    
+    #log our hyperparameters to the experiment
+    for param, value in params.items():
+        experiment.log_parameter(param, value)
+    experiment.flush()
+    
+    return experiment
+
+#define optimizer and training operation
+
+"""
+- Instantiate new model and optimizer
+- Use loss.backward(), to perform backpropagation
+- To update model's parameters based on the computed gradients, we will take a step
+with the optimizer via optimizer.step()
+"""
+
+model = LSTMModel(vocab_size, params["embedding_dim"], params["hidden_size"])
+
+#move model to GPU
+model.to(device)
+
+#instantiate an optimzer with its learning rate, lets try Adam to start (torch.optim)
+optimizer = optim.Adam(model.parameters(), lr = params["learning_rate"])
+
+def train_step(x, y):
+    #set the model's mode to train
+    
+    model.train()
+    
+    #zero gradients for every step
+    optimizer.zero_grad() #clears accumulated gradients from previous training step
+    
+    #forward pass
+    y_hat = model(x)
+    
+    #compute loss
+    loss = compute_loss(y, y_hat)
+    
+    #backward pass
+    #complete gradient computation and update step
+    #1. backpropgate the loss
+    #2. update the model paramters via optimizer
+    loss.backward() #when this is called, it accumulates gradients
+    optimizer.step()
+    
+    return loss
+
+##################
+# Begin training!#
+##################
+
+history = []
+plotter = mdl.util.PeriodicPlotter(sec=2, xlabel='Iterations', ylabel='Loss')
+experiment = create_experiment()
+
+if hasattr(tqdm, '_instances'): tqdm._instances.clear() # clear if it exists
+for iter in tqdm(range(params["num_training_iterations"])):
+
+    # Grab a batch and propagate it through the network
+    x_batch, y_batch = get_batch(vectorized_songs, params["seq_length"], params["batch_size"])
+
+    # Convert numpy arrays to PyTorch tensors
+    x_batch = torch.tensor(x_batch, dtype=torch.long).to(device)
+    y_batch = torch.tensor(y_batch, dtype=torch.long).to(device)
+
+    # Take a train step
+    loss = train_step(x_batch, y_batch)
+
+    # Log the loss to the Comet interface
+    experiment.log_metric("loss", loss.item(), step=iter)
+
+    # Update the progress bar and visualize within notebook
+    history.append(loss.item())
+    plotter.plot(history)
+
+    # Save model checkpoint
+    if iter % 100 == 0:
+        torch.save(model.state_dict(), checkpoint_prefix)
+
+# Save the final trained model
+torch.save(model.state_dict(), checkpoint_prefix)
+experiment.flush()
