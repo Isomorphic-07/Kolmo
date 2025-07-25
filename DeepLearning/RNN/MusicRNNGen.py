@@ -538,19 +538,47 @@ generated_text = generate_text(model, "X")
 generated_songs = mdl.lab1.extract_song_snippet(generated_text)
 
 for i, song in enumerate(generated_songs):
-    #synnthesize the waveform from a song
-    waveform = mdl.lab1.play_song(song)
-    
-    #if its a valid song, play it
-    if waveform:
-        print("Generated song", i)
-        ipythondisplay.display(waveform)
-        
-        numeric_data = np.frombuffer(waveform.data, dtype=np.int16)
-        wav_file_path = f"output_{i}.wav"
-        write(wav_file_path, 88200, numeric_data)
-        
-        #save song to comet interface
+    print(f"Processing song {i}...")
+
+    # 🔍 Patch and inspect the ABC text
+    print(f"\n=== Song {i} raw ABC ===")
+    print(song)
+    print("========================")
+
+    def ensure_valid_abc(song_text, index):
+        required = ["X:", "T:", "M:", "K:"]
+        if all(tag in song_text for tag in required):
+            return song_text
+        else:
+            return f"X:{index}\nT:Untitled\nM:4/4\nL:1/8\nK:C\n{song_text.strip()}"
+
+    song = ensure_valid_abc(song, i)
+
+    # 🔊 Try to synthesize
+    test_song = """X:1
+        T:Scale
+        M:4/4
+        L:1/8
+        K:C
+        C D E F | G A B c |
+        """
+
+    waveform = mdl.lab1.play_song(test_song)
+
+    if waveform is None or not hasattr(waveform, "data") or len(waveform.data) == 0:
+        print(f"⚠️  Song {i} is invalid or failed to synthesize.")
+        continue
+
+    ipythondisplay.display(waveform)
+
+    numeric_data = np.frombuffer(waveform.data, dtype=np.int16)
+    wav_file_path = f"output_{i}.wav"
+    write(wav_file_path, 88200, numeric_data)
+
+    if os.path.exists(wav_file_path):
+        print(f"✅ Saved {wav_file_path}")
         experiment.log_asset(wav_file_path)
+    else:
+        print(f"❌ Failed to write {wav_file_path}")
         
 experiment.end()
