@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+import itertools
+
 import mitdeeplearning as mdl
 
 
@@ -31,6 +33,18 @@ example_song = songs[0]
 #print(example_song)
 # Convert the ABC notation to audio file and listen to it
 mdl.lab1.play_song(example_song)
+
+grid = {
+    "embedding_dim": [64, 128, 256],
+    "hidden_size": [256, 512, 1024],
+    "learning_rate": [0.001, 0.005],
+    "batch_size": [4, 8],
+    "num_training_iterations": [1000],
+    "seq_length": [100]
+}
+
+grid_keys = list(grid.keys())
+grid_combinations = list(itertools.product(*grid.values()))
 
 """
 One important thing to think about is that this notation of music does not simply 
@@ -407,7 +421,9 @@ model = LSTMModel(vocab_size, params["embedding_dim"], params["hidden_size"])
 model.to(device)
 
 #instantiate an optimzer with its learning rate, lets try Adam to start (torch.optim)
-optimizer = optim.Adam(model.parameters(), lr = params["learning_rate"])
+#optimizer = optim.Adam(model.parameters(), lr = params["learning_rate"])
+
+optimizer = optim.Adadelta(model.parameters(), lr = params["learning_rate"], rho = 0.9, eps=1e-06, weight_decay=0 )
 
 def train_step(x, y):
     #set the model's mode to train
@@ -540,7 +556,7 @@ generated_songs = mdl.lab1.extract_song_snippet(generated_text)
 for i, song in enumerate(generated_songs):
     print(f"Processing song {i}...")
 
-    # 🔍 Patch and inspect the ABC text
+    #Patch and inspect the ABC text
     print(f"\n=== Song {i} raw ABC ===")
     print(song)
     print("========================")
@@ -554,19 +570,19 @@ for i, song in enumerate(generated_songs):
 
     song = ensure_valid_abc(song, i)
 
-    # 🔊 Try to synthesize
-    test_song = """X:1
-        T:Scale
-        M:4/4
-        L:1/8
-        K:C
-        C D E F | G A B c |
-        """
+    #Try to synthesize
+    #test_song = """X:1
+    #    T:Scale
+    #    M:4/4
+    #    L:1/8
+    #    K:C
+    #   C D E F | G A B c |
+    #    """
 
-    waveform = mdl.lab1.play_song(test_song)
+    waveform = mdl.lab1.play_song(song)
 
     if waveform is None or not hasattr(waveform, "data") or len(waveform.data) == 0:
-        print(f"⚠️  Song {i} is invalid or failed to synthesize.")
+        print(f"Song {i} is invalid or failed to synthesize.")
         continue
 
     ipythondisplay.display(waveform)
@@ -576,9 +592,9 @@ for i, song in enumerate(generated_songs):
     write(wav_file_path, 88200, numeric_data)
 
     if os.path.exists(wav_file_path):
-        print(f"✅ Saved {wav_file_path}")
+        print(f"Saved {wav_file_path}")
         experiment.log_asset(wav_file_path)
     else:
-        print(f"❌ Failed to write {wav_file_path}")
+        print(f"Failed to write {wav_file_path}")
         
 experiment.end()

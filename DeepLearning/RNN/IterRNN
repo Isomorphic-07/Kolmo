@@ -1,0 +1,122 @@
+import comet_ml
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import os
+import time
+import itertools
+from tqdm import tqdm
+
+import mitdeeplearning as mdl
+from scipy.io.wavfile import write
+
+# === Setup and Constants ===
+COMET_API_KEY = "YxN22Gyp6o5A88sIVQutQikAj"
+assert torch.cuda.is_available(), "Please enable GPU from runtime settings"
+
+# Load songs and vocabulary
+songs = mdl.lab1.load_training_data()
+songs_joined = "\n\n".join(songs)
+vocab = sorted(set(songs_joined))
+char2idx = {u: i for i, u in enumerate(vocab)}
+idx2char = np.array(vocab)
+vocab_size = len(vocab)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# === Utilities ===
+def vectorize_string(string):
+    return np.array([char2idx[char] for char in string])
+
+vectorized_songs = vectorize_string(songs_joined)
+
+# === Data Batching ===
+def get_batch(vectorized_data, seq_length, batch_size):
+    n = vectorized_data.shape[0] - 1
+    idx = np.random.choice(n - seq_length, batch_size)
+    input_batch = np.array([vectorized_data[n:n + seq_length] for n in idx])
+    output_batch = np.array([vectorized_data[n + 1:n + seq_length + 1] for n in idx])
+    return torch.tensor(input_batch, dtype=torch.long), torch.tensor(output_batch, dtype=torch.long)
+
+# === Model ===
+class LSTMModel(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_size):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.lstm = nn.LSTM(embedding_dim, hidden_size, batch_first=True)
+        self.fc = nn.Linear(hidden_size, vocab_size)
+
+    def init_hidden(self, batch_size, device):
+        return (torch.zeros(1, batch_size, self.hidden_size).to(device),
+                torch.zeros(1, batch_size, self.hidden_size).to(device))
+
+    def forward(self, x, state=None, return_state=False):
+        x = self.embedding(x)
+        if state is None:
+            state = self.init_hidden(x.size(0), x.device)
+        out, state = self.lstm(x, state)
+        out = self.fc(out)
+        return (out, state) if return_state else out
+
+# === Loss ===
+cross_entropy = nn.CrossEntropyLoss()
+
+def compute_loss(labels, logits):
+    batched_labels = labels.view(-1)
+    batched_logits = logits.view(-1, vocab_size)
+    return cross_entropy(batched_logits, batched_labels)
+
+# === Training Loop ===
+def train_model(config):
+    model = LSTMModel(vocab_size, config["embedding_dim"], config["hidden_size"]).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"])
+
+    experiment = comet_ml.Experiment(api_key=COMET_API_KEY,
+                                     project_name="MusicRNNGen",
+                                     workspace="isomorphic-07")
+    experiment.set_name(f"emb={config['embedding_dim']}, hid={config['hidden_size']}, bs={config['batch_size']}, lr={config['learning_rate']}")
+    experiment.log_parameters(config)
+
+    train_losses = []
+    for iter in tqdm(range(config["num_training_iterations"])):
+        x, y = get_batch(vectorized_songs, config["seq_length"], config["batch_size"])
+        x, y = x.to(device), y.to(device)
+
+        model.train()
+        optimizer.zero_grad()
+        y_hat = model(x)
+        loss = compute_loss(y, y_hat)
+        loss.backward()
+        optimizer.step()
+
+        train_losses.append(loss.item())
+        experiment.log_metric("train_loss", loss.item(), step=iter)
+
+        if torch.isnan(loss) or loss.item() > 10:
+            print("Divergence detected. Early stopping.")
+            break
+
+    experiment.log_curve("Train Loss", x=range(len(train_losses)), y=train_losses)
+    experiment.end()
+    return train_losses[-1] if train_losses else float('inf')
+
+# === Grid Search ===
+if __name__ == "__main__":
+    param_grid = {
+        "embedding_dim": [64, 128, 256],
+        "hidden_size": [256, 512, 1024],
+        "learning_rate": [0.001, 0.005],
+        "batch_size": [4, 8],
+        "num_training_iterations": [1000],
+        "seq_length": [100]
+    }
+    grid_keys = list(param_grid.keys())
+    grid_combinations = list(itertools.product(*param_grid.values()))
+
+    for values in grid_combinations:
+        config = dict(zip(grid_keys, values))
+        print(f"\nTraining config: {config}")
+        final_loss = train_model(config)
+        print(f"Final loss: {final_loss:.4f}")
